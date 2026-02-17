@@ -1,6 +1,6 @@
 const fs = require('fs');
 const path = require('path');
-const { callClaude } = require('../../lib/claude');
+const { generateText } = require('../../lib/ai');
 const logger = require('../../lib/logger');
 
 const scoringPrompt = fs.readFileSync(
@@ -13,28 +13,29 @@ const contextPrompt = fs.readFileSync(
 );
 
 /**
- * Score raw items for relevance using a single Claude call.
+ * Score raw items for relevance using a single AI call.
  * Returns the items sorted by score with scores attached,
  * filtered to the top items (default 8-12).
  *
  * @param {Array} items - Raw items with at least id, title, content_snippet, source_type, url
  * @param {object} [options]
+ * @param {string} [options.provider] - AI provider ('claude' or 'openai')
  * @param {number} [options.minScore=6] - Minimum score to keep
  * @param {number} [options.maxItems=12] - Maximum items to return
  * @param {number} [options.minItems=8] - Minimum items to return (may lower minScore threshold)
  * @returns {Promise<Array>} Scored and filtered items
  */
 async function scoreItems(items, options = {}) {
-  const { minScore = 6, maxItems = 12, minItems = 8 } = options;
+  const { provider, minScore = 6, maxItems = 12, minItems = 8 } = options;
 
   if (!items || items.length === 0) {
     logger.info('No items to score');
     return [];
   }
 
-  logger.info(`Scoring ${items.length} items`);
+  logger.info(`Scoring ${items.length} items`, { provider: provider || 'default' });
 
-  // Prepare items for the prompt — only send what Claude needs
+  // Prepare items for the prompt — only send what the model needs
   const itemsForScoring = items.map(item => ({
     id: item.id || item._tempId,
     title: item.title,
@@ -43,20 +44,12 @@ async function scoreItems(items, options = {}) {
     url: item.url,
   }));
 
-  const response = await callClaude({
-    model: 'claude-sonnet-4-5-20250929',
-    max_tokens: 4096,
+  const { text } = await generateText({
+    provider,
     system: contextPrompt,
-    messages: [{
-      role: 'user',
-      content: `${scoringPrompt}\n\n## Items to Score\n\n${JSON.stringify(itemsForScoring, null, 2)}`,
-    }],
+    userMessage: `${scoringPrompt}\n\n## Items to Score\n\n${JSON.stringify(itemsForScoring, null, 2)}`,
+    maxTokens: 4096,
   });
-
-  const text = response.content
-    .filter(b => b.type === 'text')
-    .map(b => b.text)
-    .join('');
 
   // Parse scores
   let scores;

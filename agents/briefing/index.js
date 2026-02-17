@@ -4,7 +4,17 @@ const router = express.Router();
 const auth = require('../../middleware/auth');
 const logger = require('../../lib/logger');
 const supabase = require('../../lib/supabase');
+const { getProviders, getDefaultProvider } = require('../../lib/ai');
 const { runPipeline } = require('./pipeline');
+const { chat } = require('./chat');
+
+// GET /providers — list available AI providers for the frontend toggle
+router.get('/providers', (req, res) => {
+  res.json({
+    providers: getProviders(),
+    default: getDefaultProvider(),
+  });
+});
 
 // GET /episodes — paginated episode list
 router.get('/episodes', async (req, res, next) => {
@@ -15,7 +25,7 @@ router.get('/episodes', async (req, res, next) => {
 
     const { data: episodes, error, count } = await supabase
       .from('briefing_episodes')
-      .select('id, date, summary, audio_url, audio_duration_seconds, status, created_at', { count: 'exact' })
+      .select('id, date, summary, audio_url, audio_duration_seconds, status, metadata, created_at', { count: 'exact' })
       .order('date', { ascending: false })
       .range(offset, offset + limit - 1);
 
@@ -125,11 +135,17 @@ router.get('/audio/:id.mp3', async (req, res, next) => {
   }
 });
 
-// POST /chat — knowledge base chat (semantic search + Claude)
-// Requires embeddings (step 7) — left as 501 for now
+// POST /chat — knowledge base chat (semantic search + AI)
 router.post('/chat', async (req, res, next) => {
   try {
-    res.status(501).json({ error: 'Not implemented — requires embedding pipeline (step 7)', endpoint: 'POST /chat' });
+    const { message, provider } = req.body;
+
+    if (!message || typeof message !== 'string' || message.trim().length === 0) {
+      return res.status(400).json({ error: 'message is required' });
+    }
+
+    const result = await chat(message, { provider });
+    res.json(result);
   } catch (err) {
     next(err);
   }
@@ -195,16 +211,27 @@ router.delete('/queries/:id', auth, async (req, res, next) => {
   }
 });
 
-// POST /generate — manual pipeline trigger
+// POST /generate — manual pipeline trigger with optional provider selection
 router.post('/generate', auth, async (req, res, next) => {
   try {
+    const { provider } = req.body || {};
+
+    // Validate provider if given
+    const validProviders = getProviders().map(p => p.id);
+    if (provider && !validProviders.includes(provider)) {
+      return res.status(400).json({
+        error: `Invalid provider: ${provider}. Valid options: ${validProviders.join(', ')}`,
+      });
+    }
+
     // Fire and forget — pipeline runs in background
-    runPipeline().catch(err => {
+    runPipeline({ provider }).catch(err => {
       logger.error('Manual pipeline run failed', { error: err.message });
     });
 
     res.status(202).json({
       status: 'started',
+      provider: provider || getDefaultProvider(),
       message: 'Pipeline triggered. Results will appear in the database and Slack.',
     });
   } catch (err) {

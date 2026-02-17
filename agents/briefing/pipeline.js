@@ -1,6 +1,7 @@
 const supabase = require('../../lib/supabase');
 const logger = require('../../lib/logger');
 const { notify } = require('../../lib/slack');
+const { getDefaultProvider } = require('../../lib/ai');
 const { fetchRSS } = require('./sources/rss');
 const { fetchSearchResults } = require('./sources/search');
 const { scoreItems } = require('./scorer');
@@ -11,20 +12,23 @@ const { generateAudio } = require('./tts');
  * Main briefing pipeline orchestrator.
  * Coordinates: source collection → scoring → script writing → TTS → publishing.
  *
+ * @param {object} [options]
+ * @param {string} [options.provider] - AI provider ('claude' or 'openai'). Defaults to AI_PROVIDER env.
  * @returns {Promise<object>} The created episode record
  */
-async function runPipeline() {
+async function runPipeline(options = {}) {
+  const provider = options.provider || getDefaultProvider();
   const date = new Date().toISOString().split('T')[0];
   let episodeId = null;
 
-  logger.info('=== Briefing pipeline started ===', { date });
+  logger.info('=== Briefing pipeline started ===', { date, provider });
 
   try {
     // Step 1: Collect sources in parallel
     logger.info('Step 1: Collecting sources');
     const [rssItems, searchItems] = await Promise.allSettled([
       fetchRSS(),
-      fetchSearchResults(),
+      fetchSearchResults({ provider }),
     ]);
 
     const items = [];
@@ -88,7 +92,7 @@ async function runPipeline() {
 
     // Step 5: Score items
     logger.info('Step 5: Scoring items');
-    const scoredItems = await scoreItems(items);
+    const scoredItems = await scoreItems(items, { provider });
     logger.info(`Scoring complete: ${scoredItems.length} items passed filter`);
 
     if (scoredItems.length === 0) {
@@ -99,7 +103,7 @@ async function runPipeline() {
 
     // Step 6: Write script
     logger.info('Step 6: Writing script');
-    const scriptResult = await writeScript(scoredItems, { date });
+    const scriptResult = await writeScript(scoredItems, { provider, date });
     logger.info('Script written', {
       wordCount: scriptResult.clean_script.split(/\s+/).length,
       sections: scriptResult.sections.length,
@@ -118,7 +122,7 @@ async function runPipeline() {
         sections: scriptResult.sections,
         source_item_ids: scriptResult.source_item_ids,
         status: 'generating',
-        metadata: {},
+        metadata: { provider },
       })
       .select()
       .single();
@@ -170,6 +174,7 @@ async function runPipeline() {
 
     // Step 11: Slack notification
     const wordCount = scriptResult.clean_script.split(/\s+/).length;
+    const providerLabel = provider === 'openai' ? 'GPT-4.1' : 'Claude';
     await notify({
       text: `🎙️ Morning briefing for ${date} is ready!`,
       blocks: [
@@ -184,17 +189,17 @@ async function runPipeline() {
           type: 'context',
           elements: [{
             type: 'mrkdwn',
-            text: `${wordCount} words · ~${Math.round(audioResult.audioDurationSeconds / 60)} min · ${scoredItems.length} sources`,
+            text: `${wordCount} words · ~${Math.round(audioResult.audioDurationSeconds / 60)} min · ${scoredItems.length} sources · ${providerLabel}`,
           }],
         },
       ],
     });
 
-    logger.info('=== Briefing pipeline complete ===', { date, episodeId });
+    logger.info('=== Briefing pipeline complete ===', { date, episodeId, provider });
 
     return { ...episode, audio_url: audioResult.audioUrl, audio_duration_seconds: audioResult.audioDurationSeconds, status: 'generated' };
   } catch (err) {
-    logger.error('Pipeline failed', { date, episodeId, error: err.message, stack: err.stack });
+    logger.error('Pipeline failed', { date, episodeId, provider, error: err.message, stack: err.stack });
 
     // Mark episode as failed if one was created
     if (episodeId) {
@@ -202,7 +207,7 @@ async function runPipeline() {
         .from('briefing_episodes')
         .update({
           status: 'failed',
-          metadata: { error: err.message },
+          metadata: { provider, error: err.message },
         })
         .eq('id', episodeId)
         .catch(updateErr => logger.error('Failed to mark episode as failed', { error: updateErr.message }));

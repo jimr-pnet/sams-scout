@@ -1,17 +1,19 @@
-const { callClaude } = require('../../../lib/claude');
+const { webSearch } = require('../../../lib/ai');
 const supabase = require('../../../lib/supabase');
 const logger = require('../../../lib/logger');
 
 /**
- * Run Claude web search for all active standing queries.
- * Uses the web_search_20250305 tool to find recent, relevant content.
+ * Run web search for all active standing queries.
+ * Uses Claude web_search tool or OpenAI Responses API web_search_preview
+ * depending on the selected provider.
  *
  * @param {object} [options]
+ * @param {string} [options.provider] - AI provider ('claude' or 'openai')
  * @param {number} [options.maxResultsPerQuery=5] - Max items to extract per query
  * @returns {Promise<Array>} Normalized raw items ready for insertion
  */
 async function fetchSearchResults(options = {}) {
-  const maxResultsPerQuery = options.maxResultsPerQuery || 5;
+  const { provider, maxResultsPerQuery = 5 } = options;
 
   // Get active search queries
   const { data: queries, error } = await supabase
@@ -29,13 +31,13 @@ async function fetchSearchResults(options = {}) {
     return [];
   }
 
-  logger.info(`Running ${queries.length} web searches`);
+  logger.info(`Running ${queries.length} web searches`, { provider: provider || 'default' });
 
   // Run searches sequentially to manage API usage
   const items = [];
   for (const query of queries) {
     try {
-      const results = await searchSingleQuery(query, maxResultsPerQuery);
+      const results = await searchSingleQuery(query, maxResultsPerQuery, provider);
       items.push(...results);
     } catch (err) {
       logger.error(`Web search failed for query: "${query.query}"`, {
@@ -48,18 +50,10 @@ async function fetchSearchResults(options = {}) {
   return items;
 }
 
-async function searchSingleQuery(query, maxResults) {
-  const response = await callClaude({
-    model: 'claude-sonnet-4-5-20250929',
-    max_tokens: 4096,
-    tools: [{
-      type: 'web_search_20250305',
-      name: 'web_search',
-      max_uses: 3,
-    }],
-    messages: [{
-      role: 'user',
-      content: `Search the web for the latest news and developments about: "${query.query}"
+async function searchSingleQuery(query, maxResults, provider) {
+  const { text } = await webSearch({
+    provider,
+    userMessage: `Search the web for the latest news and developments about: "${query.query}"
 
 Find the most recent and relevant articles, blog posts, or reports from the past 24 hours. For each result, extract:
 - The article title
@@ -70,12 +64,8 @@ Return your findings as a JSON array with this structure:
 [{"title": "...", "url": "...", "summary": "..."}]
 
 Return ONLY the JSON array, no other text. If you find fewer than ${maxResults} relevant results, that's fine. Focus on quality and recency.`,
-    }],
+    maxTokens: 4096,
   });
-
-  // Extract the text response (after tool use)
-  const textBlocks = response.content.filter(b => b.type === 'text');
-  const text = textBlocks.map(b => b.text).join('');
 
   // Parse the JSON array from the response
   let results;

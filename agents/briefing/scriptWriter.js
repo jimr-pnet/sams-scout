@@ -1,6 +1,6 @@
 const fs = require('fs');
 const path = require('path');
-const { callClaude } = require('../../lib/claude');
+const { generateText } = require('../../lib/ai');
 const logger = require('../../lib/logger');
 
 const scriptPrompt = fs.readFileSync(
@@ -23,19 +23,20 @@ const contextPrompt = fs.readFileSync(
  *
  * @param {Array} items - Scored items (with id, title, content, source_type, relevance_score)
  * @param {object} [options]
+ * @param {string} [options.provider] - AI provider ('claude' or 'openai')
  * @param {string} [options.date] - Date string for the episode (defaults to today)
  * @returns {Promise<object>} { script, clean_script, sections, source_item_ids, summary }
  */
 async function writeScript(items, options = {}) {
-  const date = options.date || new Date().toISOString().split('T')[0];
+  const { provider, date = new Date().toISOString().split('T')[0] } = options;
 
   if (!items || items.length === 0) {
     throw new Error('No items provided for script generation');
   }
 
-  logger.info(`Generating script from ${items.length} items for ${date}`);
+  logger.info(`Generating script from ${items.length} items for ${date}`, { provider: provider || 'default' });
 
-  // Prepare source material for Claude
+  // Prepare source material
   const sourceMaterial = items.map(item => ({
     id: item.id,
     title: item.title,
@@ -45,20 +46,12 @@ async function writeScript(items, options = {}) {
     relevance_score: item.relevance_score,
   }));
 
-  const response = await callClaude({
-    model: 'claude-sonnet-4-5-20250929',
-    max_tokens: 8192,
+  const { text: script } = await generateText({
+    provider,
     system: contextPrompt,
-    messages: [{
-      role: 'user',
-      content: `${scriptPrompt}\n\nToday's date: ${date}\n\n## Source Material\n\n${JSON.stringify(sourceMaterial, null, 2)}`,
-    }],
+    userMessage: `${scriptPrompt}\n\nToday's date: ${date}\n\n## Source Material\n\n${JSON.stringify(sourceMaterial, null, 2)}`,
+    maxTokens: 8192,
   });
-
-  const script = response.content
-    .filter(b => b.type === 'text')
-    .map(b => b.text)
-    .join('');
 
   if (!script || script.length < 200) {
     throw new Error('Script generation returned insufficient content');
@@ -75,7 +68,7 @@ async function writeScript(items, options = {}) {
   const sections = parseSections(script);
 
   // Generate a brief summary
-  const summary = await generateSummary(script);
+  const summary = await generateSummary(script, provider);
 
   const wordCount = clean_script.split(/\s+/).length;
   const estimatedMinutes = (wordCount / 150).toFixed(1);
@@ -184,22 +177,15 @@ function parseSections(script) {
 /**
  * Generate a 1-2 sentence summary of the briefing.
  */
-async function generateSummary(script) {
+async function generateSummary(script, provider) {
   try {
-    const response = await callClaude({
-      model: 'claude-sonnet-4-5-20250929',
-      max_tokens: 200,
-      messages: [{
-        role: 'user',
-        content: `Summarise this briefing script in one to two sentences for a podcast episode description. Be specific about the topics covered. No quotes or formatting.\n\n${script.substring(0, 3000)}`,
-      }],
+    const { text } = await generateText({
+      provider,
+      maxTokens: 200,
+      userMessage: `Summarise this briefing script in one to two sentences for a podcast episode description. Be specific about the topics covered. No quotes or formatting.\n\n${script.substring(0, 3000)}`,
     });
 
-    return response.content
-      .filter(b => b.type === 'text')
-      .map(b => b.text)
-      .join('')
-      .trim();
+    return text.trim();
   } catch (err) {
     logger.warn('Failed to generate summary', { error: err.message });
     return 'Daily intelligence briefing on agentic commerce and marketing disruption.';
