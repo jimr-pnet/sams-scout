@@ -10,8 +10,25 @@ const { runMigrations } = require('./lib/migrate');
 const app = express();
 const PORT = process.env.PORT || 3000;
 
-// Middleware
-app.use(cors());
+// CORS — allow Lovable frontend and local dev
+const allowedOrigins = [
+  'https://sam-scout.lovable.app',
+  'http://localhost:5173',
+  'http://localhost:3000',
+];
+
+app.use(cors({
+  origin(origin, callback) {
+    // Allow requests with no origin (curl, server-to-server, mobile)
+    if (!origin) return callback(null, true);
+    // Allow exact matches and any *.lovable.app subdomain
+    if (allowedOrigins.includes(origin) || /\.lovable\.app$/.test(origin)) {
+      return callback(null, true);
+    }
+    callback(new Error('Not allowed by CORS'));
+  },
+  credentials: true,
+}));
 app.use(express.json({ limit: '10mb' }));
 
 app.use((req, res, next) => {
