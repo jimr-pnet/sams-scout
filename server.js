@@ -5,6 +5,7 @@ const cors = require('cors');
 const logger = require('./lib/logger');
 const agentRegistry = require('./agents');
 const errorHandler = require('./middleware/errorHandler');
+const { runMigrations } = require('./lib/migrate');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -39,6 +40,11 @@ app.use((req, res) => {
 app.use(errorHandler);
 
 // Start server
-app.listen(PORT, () => {
+app.listen(PORT, async () => {
   logger.info(`PropellerNet Agent Platform running on port ${PORT}`);
+
+  // Run pending database migrations in the background
+  runMigrations().catch(err => {
+    logger.error('Startup migrations failed', { error: err.message });
+  });
 });
