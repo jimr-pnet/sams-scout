@@ -25,6 +25,20 @@ async function runPipeline(options = {}) {
   logger.info('=== Briefing pipeline started ===', { date, provider });
 
   try {
+    // Diagnostic: log source and query counts so we can see what's in the DB
+    const { count: sourceCount, error: srcErr } = await supabase
+      .from('briefing_sources')
+      .select('*', { count: 'exact', head: true })
+      .eq('active', true);
+    const { count: queryCount, error: qErr } = await supabase
+      .from('briefing_search_queries')
+      .select('*', { count: 'exact', head: true })
+      .eq('active', true);
+    logger.info('Pipeline diagnostics', {
+      activeSources: srcErr ? `error: ${srcErr.message}` : sourceCount,
+      activeQueries: qErr ? `error: ${qErr.message}` : queryCount,
+    });
+
     // Step 1: Collect sources in parallel
     logger.info('Step 1: Collecting sources');
     onStatus({ step: 1, totalSteps: 11, status: 'running', message: 'Collecting sources from RSS feeds and web search...', detail: null });
