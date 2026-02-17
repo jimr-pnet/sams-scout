@@ -5,7 +5,8 @@ function auth(req, res, next) {
   }
 
   const apiKey = req.headers['x-api-key']
-    || (req.headers.authorization || '').replace(/^Bearer\s+/i, '');
+    || (req.headers.authorization || '').replace(/^Bearer\s+/i, '')
+    || req.query.api_key;
 
   if (!apiKey || apiKey !== expectedKey) {
     return res.status(401).json({ error: 'Unauthorized' });
