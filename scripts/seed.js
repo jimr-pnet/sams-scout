@@ -22,6 +22,12 @@ const supabase = createClient(
 const rssSources = [
   // AI & Tech News
   {
+    name: 'The Rundown AI',
+    url: 'https://rss.beehiiv.com/feeds/2R3C6Bt5wj.xml',
+    source_type: 'rss',
+    category: 'ai_news',
+  },
+  {
     name: 'The Verge - AI',
     url: 'https://www.theverge.com/rss/ai-artificial-intelligence/index.xml',
     source_type: 'rss',
@@ -72,6 +78,12 @@ const rssSources = [
     category: 'ai_companies',
   },
   {
+    name: 'Google Blog',
+    url: 'https://blog.google/rss/',
+    source_type: 'rss',
+    category: 'ai_companies',
+  },
+  {
     name: 'Google AI Blog',
     url: 'https://blog.google/technology/ai/rss/',
     source_type: 'rss',
@@ -91,6 +103,18 @@ const rssSources = [
     category: 'strategy',
   },
   // eCommerce & Commerce
+  {
+    name: 'Retailgentic',
+    url: 'https://www.retailgentic.com/feed',
+    source_type: 'rss',
+    category: 'agentic_commerce',
+  },
+  {
+    name: 'Shopify UK Blog',
+    url: 'https://www.shopify.com/uk/blog.atom',
+    source_type: 'rss',
+    category: 'commerce',
+  },
   {
     name: 'Practical Ecommerce',
     url: 'https://www.practicalecommerce.com/feed',
@@ -175,6 +199,23 @@ const searchQueries = [
   {
     query: 'AI agents customer acquisition marketing automation',
     category: 'agency_disruption',
+    added_by: 'system',
+  },
+  // OpenAI Commerce (no RSS — docs site)
+  {
+    query: 'OpenAI agentic commerce protocol shopping ChatGPT product feeds',
+    category: 'agentic_commerce',
+    added_by: 'system',
+  },
+  {
+    query: 'OpenAI commerce API checkout integration merchant onboarding',
+    category: 'agentic_commerce',
+    added_by: 'system',
+  },
+  // commercetools (no RSS for resources page)
+  {
+    query: 'commercetools composable commerce AI agents MACH architecture',
+    category: 'commerce',
     added_by: 'system',
   },
   // Opportunity spotting
