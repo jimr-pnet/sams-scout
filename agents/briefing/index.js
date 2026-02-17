@@ -1,6 +1,9 @@
 const express = require('express');
+const cron = require('node-cron');
 const router = express.Router();
 const auth = require('../../middleware/auth');
+const logger = require('../../lib/logger');
+const { runPipeline } = require('./pipeline');
 
 // GET /episodes — paginated episode list
 router.get('/episodes', async (req, res, next) => {
@@ -77,11 +80,35 @@ router.delete('/queries/:id', auth, async (req, res, next) => {
 // POST /generate — manual pipeline trigger
 router.post('/generate', auth, async (req, res, next) => {
   try {
-    res.status(501).json({ error: 'Not implemented', endpoint: 'POST /generate' });
+    // Fire and forget — pipeline runs in background
+    runPipeline().catch(err => {
+      logger.error('Manual pipeline run failed', { error: err.message });
+    });
+
+    res.status(202).json({
+      status: 'started',
+      message: 'Pipeline triggered. Results will appear in the database and Slack.',
+    });
   } catch (err) {
     next(err);
   }
 });
+
+// Schedule cron job for automated daily runs
+const cronExpression = process.env.BRIEFING_CRON || '0 5 * * 1-5';
+
+if (cron.validate(cronExpression)) {
+  cron.schedule(cronExpression, () => {
+    logger.info('Cron triggered: starting briefing pipeline');
+    runPipeline().catch(err => {
+      logger.error('Cron pipeline run failed', { error: err.message });
+    });
+  }, { timezone: 'Europe/London' });
+
+  logger.info(`Briefing cron scheduled: "${cronExpression}" (Europe/London)`);
+} else {
+  logger.error(`Invalid cron expression: "${cronExpression}"`);
+}
 
 const meta = {
   name: 'briefing',
