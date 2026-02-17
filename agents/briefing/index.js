@@ -3,12 +3,33 @@ const cron = require('node-cron');
 const router = express.Router();
 const auth = require('../../middleware/auth');
 const logger = require('../../lib/logger');
+const supabase = require('../../lib/supabase');
 const { runPipeline } = require('./pipeline');
 
 // GET /episodes — paginated episode list
 router.get('/episodes', async (req, res, next) => {
   try {
-    res.status(501).json({ error: 'Not implemented', endpoint: 'GET /episodes' });
+    const page = Math.max(1, parseInt(req.query.page) || 1);
+    const limit = Math.min(50, Math.max(1, parseInt(req.query.limit) || 10));
+    const offset = (page - 1) * limit;
+
+    const { data: episodes, error, count } = await supabase
+      .from('briefing_episodes')
+      .select('id, date, summary, audio_url, audio_duration_seconds, status, created_at', { count: 'exact' })
+      .order('date', { ascending: false })
+      .range(offset, offset + limit - 1);
+
+    if (error) throw error;
+
+    res.json({
+      episodes,
+      pagination: {
+        page,
+        limit,
+        total: count,
+        pages: Math.ceil(count / limit),
+      },
+    });
   } catch (err) {
     next(err);
   }
@@ -17,7 +38,30 @@ router.get('/episodes', async (req, res, next) => {
 // GET /episodes/latest — today's episode (must be before :id route)
 router.get('/episodes/latest', async (req, res, next) => {
   try {
-    res.status(501).json({ error: 'Not implemented', endpoint: 'GET /episodes/latest' });
+    const { data: episode, error } = await supabase
+      .from('briefing_episodes')
+      .select('*')
+      .order('date', { ascending: false })
+      .limit(1)
+      .single();
+
+    if (error && error.code === 'PGRST116') {
+      return res.status(404).json({ error: 'No episodes found' });
+    }
+    if (error) throw error;
+
+    // Fetch associated source items
+    if (episode.source_item_ids && episode.source_item_ids.length > 0) {
+      const { data: sources } = await supabase
+        .from('briefing_raw_items')
+        .select('id, title, url, source_type, relevance_score, published_at')
+        .in('id', episode.source_item_ids);
+      episode.sources = sources || [];
+    } else {
+      episode.sources = [];
+    }
+
+    res.json(episode);
   } catch (err) {
     next(err);
   }
@@ -26,25 +70,66 @@ router.get('/episodes/latest', async (req, res, next) => {
 // GET /episodes/:id — full episode with sections + sources
 router.get('/episodes/:id', async (req, res, next) => {
   try {
-    res.status(501).json({ error: 'Not implemented', endpoint: 'GET /episodes/:id' });
+    const { data: episode, error } = await supabase
+      .from('briefing_episodes')
+      .select('*')
+      .eq('id', req.params.id)
+      .single();
+
+    if (error && error.code === 'PGRST116') {
+      return res.status(404).json({ error: 'Episode not found' });
+    }
+    if (error) throw error;
+
+    // Fetch associated source items
+    if (episode.source_item_ids && episode.source_item_ids.length > 0) {
+      const { data: sources } = await supabase
+        .from('briefing_raw_items')
+        .select('id, title, url, source_type, content_snippet, relevance_score, published_at, metadata')
+        .in('id', episode.source_item_ids);
+      episode.sources = sources || [];
+    } else {
+      episode.sources = [];
+    }
+
+    res.json(episode);
   } catch (err) {
     next(err);
   }
 });
 
-// GET /audio/:id.mp3 — audio file streaming
+// GET /audio/:id.mp3 — audio file streaming (proxy from Supabase Storage)
 router.get('/audio/:id.mp3', async (req, res, next) => {
   try {
-    res.status(501).json({ error: 'Not implemented', endpoint: 'GET /audio/:id.mp3' });
+    const episodeId = req.params.id;
+
+    const { data: episode, error } = await supabase
+      .from('briefing_episodes')
+      .select('audio_url, date')
+      .eq('id', episodeId)
+      .single();
+
+    if (error && error.code === 'PGRST116') {
+      return res.status(404).json({ error: 'Episode not found' });
+    }
+    if (error) throw error;
+
+    if (!episode.audio_url) {
+      return res.status(404).json({ error: 'Audio not yet available for this episode' });
+    }
+
+    // Redirect to the Supabase Storage public URL
+    res.redirect(301, episode.audio_url);
   } catch (err) {
     next(err);
   }
 });
 
 // POST /chat — knowledge base chat (semantic search + Claude)
+// Requires embeddings (step 7) — left as 501 for now
 router.post('/chat', async (req, res, next) => {
   try {
-    res.status(501).json({ error: 'Not implemented', endpoint: 'POST /chat' });
+    res.status(501).json({ error: 'Not implemented — requires embedding pipeline (step 7)', endpoint: 'POST /chat' });
   } catch (err) {
     next(err);
   }
@@ -53,7 +138,14 @@ router.post('/chat', async (req, res, next) => {
 // GET /queries — list standing search queries
 router.get('/queries', async (req, res, next) => {
   try {
-    res.status(501).json({ error: 'Not implemented', endpoint: 'GET /queries' });
+    const { data: queries, error } = await supabase
+      .from('briefing_search_queries')
+      .select('*')
+      .order('created_at', { ascending: false });
+
+    if (error) throw error;
+
+    res.json({ queries });
   } catch (err) {
     next(err);
   }
@@ -62,7 +154,26 @@ router.get('/queries', async (req, res, next) => {
 // POST /queries — add a standing query
 router.post('/queries', auth, async (req, res, next) => {
   try {
-    res.status(501).json({ error: 'Not implemented', endpoint: 'POST /queries' });
+    const { query, category } = req.body;
+
+    if (!query || typeof query !== 'string' || query.trim().length === 0) {
+      return res.status(400).json({ error: 'query is required' });
+    }
+
+    const { data, error } = await supabase
+      .from('briefing_search_queries')
+      .insert({
+        query: query.trim(),
+        category: category || null,
+        active: true,
+        added_by: 'sam',
+      })
+      .select()
+      .single();
+
+    if (error) throw error;
+
+    res.status(201).json(data);
   } catch (err) {
     next(err);
   }
@@ -71,7 +182,14 @@ router.post('/queries', auth, async (req, res, next) => {
 // DELETE /queries/:id — remove a standing query
 router.delete('/queries/:id', auth, async (req, res, next) => {
   try {
-    res.status(501).json({ error: 'Not implemented', endpoint: 'DELETE /queries/:id' });
+    const { error } = await supabase
+      .from('briefing_search_queries')
+      .delete()
+      .eq('id', req.params.id);
+
+    if (error) throw error;
+
+    res.status(204).end();
   } catch (err) {
     next(err);
   }
