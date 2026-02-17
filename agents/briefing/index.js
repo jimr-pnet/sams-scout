@@ -211,6 +211,70 @@ router.delete('/queries/:id', auth, async (req, res, next) => {
   }
 });
 
+// GET /generate/stream — SSE endpoint for pipeline with real-time status updates
+router.get('/generate/stream', auth, (req, res) => {
+  const { provider } = req.query;
+
+  // Validate provider if given
+  const validProviders = getProviders().map(p => p.id);
+  if (provider && !validProviders.includes(provider)) {
+    return res.status(400).json({
+      error: `Invalid provider: ${provider}. Valid options: ${validProviders.join(', ')}`,
+    });
+  }
+
+  // Set SSE headers
+  res.writeHead(200, {
+    'Content-Type': 'text/event-stream',
+    'Cache-Control': 'no-cache',
+    'Connection': 'keep-alive',
+    'X-Accel-Buffering': 'no',
+  });
+
+  // Send initial connected event
+  res.write(`data: ${JSON.stringify({ type: 'connected', message: 'Pipeline starting...' })}\n\n`);
+
+  // Keep-alive ping every 15s to prevent proxy timeouts
+  const keepAlive = setInterval(() => {
+    res.write(': keep-alive\n\n');
+  }, 15000);
+
+  // Track client disconnect
+  let clientDisconnected = false;
+  req.on('close', () => {
+    clientDisconnected = true;
+    clearInterval(keepAlive);
+  });
+
+  // onStatus callback writes SSE events
+  function onStatus(status) {
+    if (clientDisconnected) return;
+    try {
+      res.write(`data: ${JSON.stringify({ type: 'status', ...status })}\n\n`);
+    } catch (e) {
+      // Client may have disconnected
+    }
+  }
+
+  // Run pipeline with status callback
+  runPipeline({ provider, onStatus })
+    .then((episode) => {
+      if (!clientDisconnected) {
+        res.write(`data: ${JSON.stringify({ type: 'complete', episode })}\n\n`);
+        res.end();
+      }
+      clearInterval(keepAlive);
+    })
+    .catch((err) => {
+      logger.error('SSE pipeline run failed', { error: err.message });
+      if (!clientDisconnected) {
+        res.write(`data: ${JSON.stringify({ type: 'error', message: err.message })}\n\n`);
+        res.end();
+      }
+      clearInterval(keepAlive);
+    });
+});
+
 // POST /generate — manual pipeline trigger with optional provider selection
 router.post('/generate', auth, async (req, res, next) => {
   try {

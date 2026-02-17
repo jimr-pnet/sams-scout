@@ -18,6 +18,7 @@ const { generateAudio } = require('./tts');
  */
 async function runPipeline(options = {}) {
   const provider = options.provider || getDefaultProvider();
+  const onStatus = options.onStatus || (() => {});
   const date = new Date().toISOString().split('T')[0];
   let episodeId = null;
 
@@ -26,6 +27,7 @@ async function runPipeline(options = {}) {
   try {
     // Step 1: Collect sources in parallel
     logger.info('Step 1: Collecting sources');
+    onStatus({ step: 1, totalSteps: 11, status: 'running', message: 'Collecting sources from RSS feeds and web search...', detail: null });
     const [rssItems, searchItems] = await Promise.allSettled([
       fetchRSS(),
       fetchSearchResults({ provider }),
@@ -48,11 +50,13 @@ async function runPipeline(options = {}) {
     // Step 2: Early exit if nothing collected
     if (items.length === 0) {
       logger.warn('No items collected — aborting pipeline');
+      onStatus({ step: 2, totalSteps: 11, status: 'skipped', message: 'No items collected. Pipeline aborted.', detail: null });
       await notify({ text: `⚠️ Briefing pipeline for ${date}: No items collected. Skipping.` });
       return null;
     }
 
     logger.info(`Total items collected: ${items.length}`);
+    onStatus({ step: 1, totalSteps: 11, status: 'completed', message: `Collected ${items.length} items from RSS and web search.`, detail: { rssCount: rssItems.status === 'fulfilled' ? rssItems.value.length : 0, searchCount: searchItems.status === 'fulfilled' ? searchItems.value.length : 0 } });
 
     // Step 3: Assign temp IDs for scoring reference
     items.forEach((item, i) => {
@@ -61,6 +65,7 @@ async function runPipeline(options = {}) {
 
     // Step 4: Insert raw items into DB
     logger.info('Step 4: Inserting raw items into database');
+    onStatus({ step: 4, totalSteps: 11, status: 'running', message: `Saving ${items.length} raw items to database...`, detail: null });
     const rowsToInsert = items.map(item => ({
       source_id: item.source_id || null,
       source_type: item.source_type,
@@ -89,29 +94,37 @@ async function runPipeline(options = {}) {
     }
 
     logger.info(`Inserted ${insertedRows.length} raw items`);
+    onStatus({ step: 4, totalSteps: 11, status: 'completed', message: `Saved ${insertedRows.length} items.`, detail: null });
 
     // Step 5: Score items
     logger.info('Step 5: Scoring items');
+    onStatus({ step: 5, totalSteps: 11, status: 'running', message: `Scoring ${items.length} items for relevance...`, detail: { itemCount: items.length } });
     const scoredItems = await scoreItems(items, { provider });
     logger.info(`Scoring complete: ${scoredItems.length} items passed filter`);
+    onStatus({ step: 5, totalSteps: 11, status: 'completed', message: `${scoredItems.length} items passed the relevance filter.`, detail: { passedCount: scoredItems.length } });
 
     if (scoredItems.length === 0) {
       logger.warn('No items passed scoring — aborting pipeline');
+      onStatus({ step: 5, totalSteps: 11, status: 'skipped', message: 'All items scored too low. Pipeline aborted.', detail: null });
       await notify({ text: `⚠️ Briefing pipeline for ${date}: All items scored too low. Skipping.` });
       return null;
     }
 
     // Step 6: Write script
     logger.info('Step 6: Writing script');
+    onStatus({ step: 6, totalSteps: 11, status: 'running', message: `Writing the briefing script from ${scoredItems.length} sources...`, detail: null });
     const scriptResult = await writeScript(scoredItems, { provider, date });
+    const scriptWordCount = scriptResult.clean_script.split(/\s+/).length;
     logger.info('Script written', {
-      wordCount: scriptResult.clean_script.split(/\s+/).length,
+      wordCount: scriptWordCount,
       sections: scriptResult.sections.length,
       sourcesCited: scriptResult.source_item_ids.length,
     });
+    onStatus({ step: 6, totalSteps: 11, status: 'completed', message: `Script written: ${scriptWordCount} words, ${scriptResult.sections.length} sections.`, detail: { wordCount: scriptWordCount, sectionCount: scriptResult.sections.length } });
 
     // Step 7: Create episode record
     logger.info('Step 7: Creating episode record');
+    onStatus({ step: 7, totalSteps: 11, status: 'running', message: 'Creating episode record...', detail: null });
     const { data: episode, error: episodeError } = await supabase
       .from('briefing_episodes')
       .insert({
@@ -133,9 +146,11 @@ async function runPipeline(options = {}) {
 
     episodeId = episode.id;
     logger.info('Episode created', { episodeId });
+    onStatus({ step: 7, totalSteps: 11, status: 'completed', message: 'Episode record created.', detail: { episodeId } });
 
     // Step 8: Generate audio
     logger.info('Step 8: Generating audio');
+    onStatus({ step: 8, totalSteps: 11, status: 'running', message: 'Generating audio with ElevenLabs... this may take a minute or two.', detail: null });
     const audioResult = await generateAudio(scriptResult.clean_script, {
       episodeId,
       date,
@@ -144,9 +159,11 @@ async function runPipeline(options = {}) {
       audioUrl: audioResult.audioUrl,
       duration: audioResult.audioDurationSeconds,
     });
+    onStatus({ step: 8, totalSteps: 11, status: 'completed', message: `Audio generated: ~${Math.round(audioResult.audioDurationSeconds / 60)} minutes.`, detail: { audioUrl: audioResult.audioUrl, durationSeconds: audioResult.audioDurationSeconds } });
 
     // Step 9: Update episode with audio info
     logger.info('Step 9: Updating episode with audio');
+    onStatus({ step: 9, totalSteps: 11, status: 'running', message: 'Finalising episode with audio...', detail: null });
     const { error: updateError } = await supabase
       .from('briefing_episodes')
       .update({
@@ -162,6 +179,7 @@ async function runPipeline(options = {}) {
 
     // Step 10: Update raw items with episode_id and scores
     logger.info('Step 10: Updating raw items with scores');
+    onStatus({ step: 10, totalSteps: 11, status: 'running', message: 'Updating source items with scores...', detail: null });
     for (const item of scoredItems) {
       await supabase
         .from('briefing_raw_items')
@@ -173,6 +191,7 @@ async function runPipeline(options = {}) {
     }
 
     // Step 11: Slack notification
+    onStatus({ step: 11, totalSteps: 11, status: 'running', message: 'Sending Slack notification...', detail: null });
     const wordCount = scriptResult.clean_script.split(/\s+/).length;
     const providerLabel = provider === 'openai' ? 'GPT-4.1' : 'Claude';
     await notify({
@@ -196,10 +215,12 @@ async function runPipeline(options = {}) {
     });
 
     logger.info('=== Briefing pipeline complete ===', { date, episodeId, provider });
+    onStatus({ step: 11, totalSteps: 11, status: 'completed', message: 'Pipeline complete! Your briefing is ready.', detail: { episodeId, date } });
 
     return { ...episode, audio_url: audioResult.audioUrl, audio_duration_seconds: audioResult.audioDurationSeconds, status: 'generated' };
   } catch (err) {
     logger.error('Pipeline failed', { date, episodeId, provider, error: err.message, stack: err.stack });
+    onStatus({ step: 0, totalSteps: 11, status: 'failed', message: `Pipeline failed: ${err.message}`, detail: { error: err.message } });
 
     // Mark episode as failed if one was created
     if (episodeId) {
