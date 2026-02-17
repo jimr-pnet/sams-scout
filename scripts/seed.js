@@ -232,6 +232,28 @@ const searchQueries = [
 ];
 
 // ---------------------------------------------------------------------------
+// Helpers
+// ---------------------------------------------------------------------------
+
+/**
+ * Insert rows one-by-one, skipping duplicates.
+ * Fallback when upsert fails (e.g. missing UNIQUE constraint).
+ */
+async function insertRowByRow(table, rows) {
+  let inserted = 0;
+  for (const row of rows) {
+    const { error } = await supabase.from(table).insert(row);
+    if (error) {
+      if (error.code === '23505') continue; // unique_violation — already exists
+      console.error(`  Failed to insert into ${table}:`, error.message);
+    } else {
+      inserted++;
+    }
+  }
+  return inserted;
+}
+
+// ---------------------------------------------------------------------------
 // Seed execution
 // ---------------------------------------------------------------------------
 async function seed() {
@@ -244,9 +266,11 @@ async function seed() {
     .select();
 
   if (sourceError) {
-    console.error('Failed to seed sources:', sourceError.message);
+    console.warn('  Upsert failed, falling back to row-by-row insert:', sourceError.message);
+    const count = await insertRowByRow('briefing_sources', allSources);
+    console.log(`  Inserted ${count} sources via fallback`);
   } else {
-    console.log(`  Inserted ${sourceData?.length || 0} sources`);
+    console.log(`  Upserted ${sourceData?.length || 0} sources`);
   }
 
   console.log('Seeding briefing_search_queries...');
@@ -257,9 +281,11 @@ async function seed() {
     .select();
 
   if (queryError) {
-    console.error('Failed to seed queries:', queryError.message);
+    console.warn('  Upsert failed, falling back to row-by-row insert:', queryError.message);
+    const count = await insertRowByRow('briefing_search_queries', searchQueries);
+    console.log(`  Inserted ${count} queries via fallback`);
   } else {
-    console.log(`  Inserted ${queryData?.length || 0} queries`);
+    console.log(`  Upserted ${queryData?.length || 0} queries`);
   }
 
   // Verify
