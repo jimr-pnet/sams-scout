@@ -6,6 +6,7 @@ const logger = require('./lib/logger');
 const agentRegistry = require('./agents');
 const errorHandler = require('./middleware/errorHandler');
 const { runMigrations } = require('./lib/migrate');
+const { ensureSeedData } = require('./lib/seed');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -60,8 +61,10 @@ app.use(errorHandler);
 app.listen(PORT, async () => {
   logger.info(`PropellerNet Agent Platform running on port ${PORT}`);
 
-  // Run pending database migrations in the background
-  runMigrations().catch(err => {
-    logger.error('Startup migrations failed', { error: err.message });
-  });
+  // Run pending database migrations, then verify seed data exists
+  runMigrations()
+    .then(() => ensureSeedData())
+    .catch(err => {
+      logger.error('Startup migrations/seed failed', { error: err.message });
+    });
 });

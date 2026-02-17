@@ -11,15 +11,17 @@ const parser = new RSSParser({
 
 /**
  * Fetch RSS feeds from all active RSS sources.
- * Filters items to the last 24 hours by default.
+ * Filters items to the last 24 hours by default, with a 72-hour fallback
+ * if the initial window yields nothing (handles weekends / low-activity periods).
  *
  * @param {object} [options]
  * @param {number} [options.hoursBack=24] - How many hours back to look for items
+ * @param {number} [options.fallbackHoursBack=72] - Wider window if first pass finds nothing
  * @returns {Promise<Array>} Normalized raw items ready for insertion
  */
 async function fetchRSS(options = {}) {
   const hoursBack = options.hoursBack || 24;
-  const cutoff = new Date(Date.now() - hoursBack * 60 * 60 * 1000);
+  const fallbackHoursBack = options.fallbackHoursBack || 72;
 
   // Get active RSS sources
   const { data: sources, error } = await supabase
@@ -38,9 +40,24 @@ async function fetchRSS(options = {}) {
     return [];
   }
 
-  logger.info(`Fetching ${sources.length} RSS feeds`);
+  logger.info(`Fetching ${sources.length} RSS feeds (${hoursBack}h window)`);
 
-  // Fetch all feeds in parallel
+  // First pass: standard window
+  let items = await fetchAllFeeds(sources, hoursBack);
+
+  // Fallback: widen window if nothing found
+  if (items.length === 0 && fallbackHoursBack > hoursBack) {
+    logger.info(`No items in last ${hoursBack}h — retrying with ${fallbackHoursBack}h window`);
+    items = await fetchAllFeeds(sources, fallbackHoursBack);
+  }
+
+  logger.info(`RSS collection complete: ${items.length} items from ${sources.length} feeds`);
+  return items;
+}
+
+async function fetchAllFeeds(sources, hoursBack) {
+  const cutoff = new Date(Date.now() - hoursBack * 60 * 60 * 1000);
+
   const results = await Promise.allSettled(
     sources.map(source => fetchSingleFeed(source, cutoff))
   );
@@ -58,7 +75,6 @@ async function fetchRSS(options = {}) {
     }
   }
 
-  logger.info(`RSS collection complete: ${items.length} items from ${sources.length} feeds`);
   return items;
 }
 
