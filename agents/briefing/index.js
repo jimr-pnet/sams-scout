@@ -26,7 +26,7 @@ router.get('/episodes', async (req, res, next) => {
     const { data: episodes, error, count } = await supabase
       .from('briefing_episodes')
       .select('id, date, summary, audio_url, audio_duration_seconds, status, metadata, created_at', { count: 'exact' })
-      .order('date', { ascending: false })
+      .order('created_at', { ascending: false })
       .range(offset, offset + limit - 1);
 
     if (error) throw error;
@@ -51,7 +51,7 @@ router.get('/episodes/latest', async (req, res, next) => {
     const { data: episode, error } = await supabase
       .from('briefing_episodes')
       .select('*')
-      .order('date', { ascending: false })
+      .order('created_at', { ascending: false })
       .limit(1)
       .single();
 
