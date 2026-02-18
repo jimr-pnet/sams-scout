@@ -4,6 +4,9 @@ const { notify } = require('../../lib/slack');
 const { getDefaultProvider } = require('../../lib/ai');
 const { fetchRSS } = require('./sources/rss');
 const { fetchSearchResults } = require('./sources/search');
+const { fetchWebScrapeItems } = require('./sources/scraper');
+const { fetchPodcastTranscripts } = require('./sources/podcasts');
+const { fetchYouTubeTranscripts } = require('./sources/youtube');
 const { scoreItems } = require('./scorer');
 const { writeScript } = require('./scriptWriter');
 const { generateAudio } = require('./tts');
@@ -43,7 +46,7 @@ async function runPipeline(options = {}) {
 
     // Step 1: Collect sources
     logger.info('Step 1: Collecting sources', { lite });
-    onStatus({ step: 1, totalSteps: 11, status: 'running', message: lite ? 'Lite mode: running 1 web search...' : 'Collecting sources from RSS feeds and web search...', detail: null });
+    onStatus({ step: 1, totalSteps: 11, status: 'running', message: lite ? 'Lite mode: running 1 web search...' : 'Collecting sources from RSS, web search, scrapers, podcasts, and YouTube...', detail: null });
 
     const items = [];
 
@@ -57,9 +60,12 @@ async function runPipeline(options = {}) {
         logger.error('Lite web search failed', { error: err.message });
       }
     } else {
-      const [rssItems, searchItems] = await Promise.allSettled([
+      const [rssItems, searchItems, scrapeItems, podcastItems, youtubeItems] = await Promise.allSettled([
         fetchRSS(),
         fetchSearchResults({ provider }),
+        fetchWebScrapeItems(),
+        fetchPodcastTranscripts(),
+        fetchYouTubeTranscripts(),
       ]);
 
       if (rssItems.status === 'fulfilled') {
@@ -73,6 +79,24 @@ async function runPipeline(options = {}) {
         logger.info(`Web search: ${searchItems.value.length} items`);
       } else {
         logger.error('Web search failed', { error: searchItems.reason.message });
+      }
+      if (scrapeItems.status === 'fulfilled') {
+        items.push(...scrapeItems.value);
+        logger.info(`Web scrape: ${scrapeItems.value.length} items`);
+      } else {
+        logger.error('Web scrape collection failed', { error: scrapeItems.reason.message });
+      }
+      if (podcastItems.status === 'fulfilled') {
+        items.push(...podcastItems.value);
+        logger.info(`Podcasts: ${podcastItems.value.length} items`);
+      } else {
+        logger.error('Podcast collection failed', { error: podcastItems.reason.message });
+      }
+      if (youtubeItems.status === 'fulfilled') {
+        items.push(...youtubeItems.value);
+        logger.info(`YouTube: ${youtubeItems.value.length} items`);
+      } else {
+        logger.error('YouTube collection failed', { error: youtubeItems.reason.message });
       }
     }
 
