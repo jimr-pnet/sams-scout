@@ -85,7 +85,7 @@ async function runPipeline(options = {}) {
     }
 
     logger.info(`Total items collected: ${items.length}`);
-    onStatus({ step: 1, totalSteps: 11, status: 'completed', message: `Collected ${items.length} items from RSS and web search.`, detail: { rssCount: rssItems.status === 'fulfilled' ? rssItems.value.length : 0, searchCount: searchItems.status === 'fulfilled' ? searchItems.value.length : 0 } });
+    onStatus({ step: 1, totalSteps: 11, status: 'completed', message: `Collected ${items.length} items${lite ? ' (lite mode)' : ''}.`, detail: { itemCount: items.length, lite } });
 
     // Step 3: Assign temp IDs for scoring reference
     items.forEach((item, i) => {

@@ -23,7 +23,11 @@ app.use(cors({
     // Allow requests with no origin (curl, server-to-server, mobile)
     if (!origin) return callback(null, true);
     // Allow exact matches and any *.lovable.app subdomain
-    if (allowedOrigins.includes(origin) || /\.lovable\.app$/.test(origin)) {
+    if (
+      allowedOrigins.includes(origin) ||
+      /lovable\.app$/.test(origin) ||
+      /lovable\.dev$/.test(origin)
+    ) {
       return callback(null, true);
     }
     callback(new Error('Not allowed by CORS'));
