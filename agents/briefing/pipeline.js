@@ -46,14 +46,14 @@ async function runPipeline(options = {}) {
 
     // Step 1: Collect sources
     logger.info('Step 1: Collecting sources', { lite });
-    onStatus({ step: 1, totalSteps: 11, status: 'running', message: lite ? 'Lite mode: running 1 web search...' : 'Collecting sources from RSS, web search, scrapers, podcasts, and YouTube...', detail: null });
+    onStatus({ step: 1, totalSteps: 11, status: 'running', message: lite ? 'Lite mode: running 5 web searches...' : 'Collecting sources from RSS, web search, scrapers, podcasts, and YouTube...', detail: null });
 
     const items = [];
 
     if (lite) {
-      // Lite mode: skip RSS, run only 1 web search query
+      // Lite mode: skip RSS, run all 5 standing search queries
       try {
-        const results = await fetchSearchResults({ provider, limit: 1 });
+        const results = await fetchSearchResults({ provider, limit: 5 });
         items.push(...results);
         logger.info(`Lite web search: ${results.length} items`);
       } catch (err) {
