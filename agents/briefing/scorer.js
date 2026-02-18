@@ -39,13 +39,14 @@ async function scoreItems(items, options = {}) {
   const itemsForScoring = items.map(item => ({
     id: item.id || item._tempId,
     title: item.title,
-    content_snippet: (item.content_snippet || item.content || '').substring(0, 500),
+    content_snippet: (item.content_snippet || item.content || '').substring(0, 300),
     source_type: item.source_type,
     url: item.url,
   }));
 
   const { text } = await generateText({
     provider,
+    model: 'claude-haiku-4-5-20251001',
     system: contextPrompt,
     userMessage: `${scoringPrompt}\n\n## Items to Score\n\n${JSON.stringify(itemsForScoring, null, 2)}`,
     maxTokens: 4096,
