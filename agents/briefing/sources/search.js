@@ -1,20 +1,25 @@
-const { webSearch } = require('../../../lib/ai');
+const { tavily } = require('@tavily/core');
 const supabase = require('../../../lib/supabase');
 const logger = require('../../../lib/logger');
 
+const client = tavily({ apiKey: process.env.TAVILY_API_KEY });
+
 /**
- * Run web search for all active standing queries.
- * Uses Claude web_search tool or OpenAI Responses API web_search_preview
- * depending on the selected provider.
+ * Run web search for all active standing queries using Tavily.
  *
  * @param {object} [options]
- * @param {string} [options.provider] - AI provider ('claude' or 'openai')
- * @param {number} [options.maxResultsPerQuery=5] - Max items to extract per query
+ * @param {number} [options.maxResultsPerQuery=5] - Max items per query
  * @param {number} [options.limit] - Max number of queries to run (for lite/test mode)
+ * @param {number} [options.maxQueries=6] - Hard cap on queries even in full mode (controls cost)
  * @returns {Promise<Array>} Normalized raw items ready for insertion
  */
 async function fetchSearchResults(options = {}) {
-  const { provider, maxResultsPerQuery = 5, limit } = options;
+  const { maxResultsPerQuery = 5, limit, maxQueries = 6 } = options;
+
+  if (!process.env.TAVILY_API_KEY) {
+    logger.warn('Skipping web search: TAVILY_API_KEY not configured');
+    return [];
+  }
 
   // Get active search queries
   const { data: queries, error } = await supabase
@@ -32,21 +37,22 @@ async function fetchSearchResults(options = {}) {
     return [];
   }
 
-  // In lite mode, pick a random subset of queries
-  const activeQueries = limit && limit < queries.length
-    ? queries.sort(() => Math.random() - 0.5).slice(0, limit)
+  // Apply limit (lite mode) or hard cap (full mode) to control API costs
+  const cap = limit || maxQueries;
+  const activeQueries = cap < queries.length
+    ? queries.sort(() => Math.random() - 0.5).slice(0, cap)
     : queries;
 
-  logger.info(`Running ${activeQueries.length} web searches${limit ? ` (limited from ${queries.length})` : ''}`, { provider: provider || 'default' });
+  logger.info(`Running ${activeQueries.length} Tavily searches${limit ? ` (limited from ${queries.length})` : ''}`);
 
-  // Run searches sequentially to manage API usage
+  // Run searches sequentially to stay within rate limits
   const items = [];
   for (const query of activeQueries) {
     try {
-      const results = await searchSingleQuery(query, maxResultsPerQuery, provider);
+      const results = await searchSingleQuery(query, maxResultsPerQuery);
       items.push(...results);
     } catch (err) {
-      logger.error(`Web search failed for query: "${query.query}"`, {
+      logger.error(`Tavily search failed for query: "${query.query}"`, {
         error: err.message,
       });
     }
@@ -56,51 +62,27 @@ async function fetchSearchResults(options = {}) {
   return items;
 }
 
-async function searchSingleQuery(query, maxResults, provider) {
-  const { text } = await webSearch({
-    provider,
-    userMessage: `Search the web for the latest news and developments about: "${query.query}"
-
-Find the most recent and relevant articles, blog posts, or reports from the past 24 hours. For each result, extract:
-- The article title
-- The URL
-- A 2-3 sentence summary of the key points
-
-Return your findings as a JSON array with this structure:
-[{"title": "...", "url": "...", "summary": "..."}]
-
-Return ONLY the JSON array, no other text. If you find fewer than ${maxResults} relevant results, that's fine. Focus on quality and recency.`,
-    maxTokens: 4096,
+async function searchSingleQuery(query, maxResults) {
+  const response = await client.search(query.query, {
+    searchDepth: 'basic',
+    topic: 'news',
+    maxResults,
+    days: 3,
   });
 
-  // Parse the JSON array from the response
-  let results;
-  try {
-    const jsonMatch = text.match(/\[[\s\S]*\]/);
-    if (!jsonMatch) {
-      logger.warn(`No JSON array found in search response for: "${query.query}"`);
-      return [];
-    }
-    results = JSON.parse(jsonMatch[0]);
-  } catch (err) {
-    logger.error(`Failed to parse search results for: "${query.query}"`, {
-      error: err.message,
-    });
-    return [];
-  }
-
-  return results.slice(0, maxResults).map(r => ({
+  return (response.results || []).map(r => ({
     source_id: null,
     source_type: 'web_search',
     title: r.title || 'Untitled',
     url: r.url || '',
-    content: r.summary || '',
-    content_snippet: (r.summary || '').substring(0, 500),
-    published_at: null,
+    content: r.content || '',
+    content_snippet: (r.content || '').substring(0, 500),
+    published_at: r.publishedDate || null,
     metadata: {
       query_id: query.id,
       query_text: query.query,
       category: query.category,
+      tavily_score: r.score,
     },
   }));
 }
