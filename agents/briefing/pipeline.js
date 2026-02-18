@@ -156,7 +156,7 @@ async function runPipeline(options = {}) {
     onStatus({ step: 7, totalSteps: 11, status: 'running', message: 'Creating episode record...', detail: null });
     const { data: episode, error: episodeError } = await supabase
       .from('briefing_episodes')
-      .insert({
+      .upsert({
         date,
         script: scriptResult.script,
         clean_script: scriptResult.clean_script,
@@ -165,7 +165,7 @@ async function runPipeline(options = {}) {
         source_item_ids: scriptResult.source_item_ids,
         status: 'pending',
         metadata: { provider },
-      })
+      }, { onConflict: 'date' })
       .select()
       .single();
 
