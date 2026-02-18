@@ -2,7 +2,12 @@ const { tavily } = require('@tavily/core');
 const supabase = require('../../../lib/supabase');
 const logger = require('../../../lib/logger');
 
-const client = tavily({ apiKey: process.env.TAVILY_API_KEY });
+// Lazy-init: Tavily SDK throws at construction time if no key is present
+let client;
+function getClient() {
+  if (!client) client = tavily({ apiKey: process.env.TAVILY_API_KEY });
+  return client;
+}
 
 /**
  * Run web search for all active standing queries using Tavily.
@@ -63,7 +68,7 @@ async function fetchSearchResults(options = {}) {
 }
 
 async function searchSingleQuery(query, maxResults) {
-  const response = await client.search(query.query, {
+  const response = await getClient().search(query.query, {
     searchDepth: 'basic',
     topic: 'news',
     maxResults,
