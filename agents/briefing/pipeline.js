@@ -163,7 +163,7 @@ async function runPipeline(options = {}) {
         summary: scriptResult.summary,
         sections: scriptResult.sections,
         source_item_ids: scriptResult.source_item_ids,
-        status: 'generating',
+        status: 'pending',
         metadata: { provider },
       })
       .select()
