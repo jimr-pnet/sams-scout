@@ -67,13 +67,7 @@ const rssSources = [
   // AI Company Blogs
   {
     name: 'OpenAI Blog',
-    url: 'https://openai.com/blog/rss.xml',
-    source_type: 'rss',
-    category: 'ai_companies',
-  },
-  {
-    name: 'Anthropic Blog',
-    url: 'https://www.anthropic.com/rss.xml',
+    url: 'https://openai.com/news/rss.xml',
     source_type: 'rss',
     category: 'ai_companies',
   },
@@ -104,14 +98,8 @@ const rssSources = [
   },
   // eCommerce & Commerce
   {
-    name: 'Retailgentic',
-    url: 'https://www.retailgentic.com/feed',
-    source_type: 'rss',
-    category: 'agentic_commerce',
-  },
-  {
-    name: 'Shopify UK Blog',
-    url: 'https://www.shopify.com/uk/blog.atom',
+    name: 'Shopify Blog',
+    url: 'https://www.shopify.com/blog.atom',
     source_type: 'rss',
     category: 'commerce',
   },
@@ -123,7 +111,13 @@ const rssSources = [
   },
   {
     name: 'Shopify Engineering',
-    url: 'https://shopify.engineering/blog/feed.atom',
+    url: 'https://shopify.engineering/blog.atom',
+    source_type: 'rss',
+    category: 'commerce',
+  },
+  {
+    name: 'RetailDive',
+    url: 'https://www.retaildive.com/feeds/news/',
     source_type: 'rss',
     category: 'commerce',
   },
