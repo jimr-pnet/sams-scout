@@ -144,6 +144,62 @@ const youtubeSources = [
 ];
 
 // ---------------------------------------------------------------------------
+// Web Scrape Sources — blogs/resource pages without reliable RSS feeds
+// ---------------------------------------------------------------------------
+const webScrapeSources = [
+  {
+    name: 'Retailgentic Blog',
+    url: 'https://www.retailgentic.com',
+    source_type: 'web_scrape',
+    category: 'agentic_commerce',
+    config: {
+      articleSelector: 'a[href*="/p/"]',
+      titleSelector: 'h1',
+      contentSelector: '.body, .post-content, article',
+      maxArticles: 5,
+    },
+  },
+  {
+    name: 'OpenAI Commerce Docs',
+    url: 'https://developers.openai.com/commerce/',
+    source_type: 'web_scrape',
+    category: 'agentic_commerce',
+    config: {
+      articleSelector: 'a[href*="/commerce/"]',
+      titleSelector: 'h1',
+      contentSelector: 'main, article, .content',
+      maxArticles: 5,
+    },
+  },
+  {
+    name: 'Shopify UK Blog',
+    url: 'https://www.shopify.com/uk/blog',
+    source_type: 'web_scrape',
+    category: 'commerce',
+    config: {
+      articleSelector: 'a[href*="/uk/blog/"]',
+      titleSelector: 'h1',
+      contentSelector: 'article, .article__body, .rte',
+      maxArticles: 5,
+      baseDomain: 'https://www.shopify.com',
+    },
+  },
+  {
+    name: 'commercetools Resources',
+    url: 'https://commercetools.com/resources',
+    source_type: 'web_scrape',
+    category: 'commerce',
+    config: {
+      articleSelector: 'a[href*="/resources/"]',
+      titleSelector: 'h1',
+      contentSelector: 'main, article, .content-body',
+      maxArticles: 5,
+      baseDomain: 'https://commercetools.com',
+    },
+  },
+];
+
+// ---------------------------------------------------------------------------
 // Standing Search Queries
 // ---------------------------------------------------------------------------
 const searchQueries = [
@@ -253,7 +309,7 @@ async function insertRowByRow(table, rows) {
 async function seed() {
   console.log('Seeding briefing_sources...');
 
-  const allSources = [...rssSources, ...youtubeSources];
+  const allSources = [...rssSources, ...youtubeSources, ...webScrapeSources];
   const { data: sourceData, error: sourceError } = await supabase
     .from('briefing_sources')
     .upsert(allSources, { onConflict: 'url', ignoreDuplicates: true })
