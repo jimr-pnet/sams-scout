@@ -14,15 +14,17 @@ const { generateAudio } = require('./tts');
  *
  * @param {object} [options]
  * @param {string} [options.provider] - AI provider ('claude' or 'openai'). Defaults to AI_PROVIDER env.
+ * @param {boolean} [options.lite] - Lite mode: skip RSS, run 1 web search query only. For testing.
  * @returns {Promise<object>} The created episode record
  */
 async function runPipeline(options = {}) {
   const provider = options.provider || getDefaultProvider();
   const onStatus = options.onStatus || (() => {});
+  const lite = options.lite || false;
   const date = new Date().toISOString().split('T')[0];
   let episodeId = null;
 
-  logger.info('=== Briefing pipeline started ===', { date, provider });
+  logger.info('=== Briefing pipeline started ===', { date, provider, lite });
 
   try {
     // Diagnostic: log source and query counts so we can see what's in the DB
@@ -39,26 +41,39 @@ async function runPipeline(options = {}) {
       activeQueries: qErr ? `error: ${qErr.message}` : queryCount,
     });
 
-    // Step 1: Collect sources in parallel
-    logger.info('Step 1: Collecting sources');
-    onStatus({ step: 1, totalSteps: 11, status: 'running', message: 'Collecting sources from RSS feeds and web search...', detail: null });
-    const [rssItems, searchItems] = await Promise.allSettled([
-      fetchRSS(),
-      fetchSearchResults({ provider }),
-    ]);
+    // Step 1: Collect sources
+    logger.info('Step 1: Collecting sources', { lite });
+    onStatus({ step: 1, totalSteps: 11, status: 'running', message: lite ? 'Lite mode: running 1 web search...' : 'Collecting sources from RSS feeds and web search...', detail: null });
 
     const items = [];
-    if (rssItems.status === 'fulfilled') {
-      items.push(...rssItems.value);
-      logger.info(`RSS: ${rssItems.value.length} items`);
+
+    if (lite) {
+      // Lite mode: skip RSS, run only 1 web search query
+      try {
+        const results = await fetchSearchResults({ provider, limit: 1 });
+        items.push(...results);
+        logger.info(`Lite web search: ${results.length} items`);
+      } catch (err) {
+        logger.error('Lite web search failed', { error: err.message });
+      }
     } else {
-      logger.error('RSS collection failed', { error: rssItems.reason.message });
-    }
-    if (searchItems.status === 'fulfilled') {
-      items.push(...searchItems.value);
-      logger.info(`Web search: ${searchItems.value.length} items`);
-    } else {
-      logger.error('Web search failed', { error: searchItems.reason.message });
+      const [rssItems, searchItems] = await Promise.allSettled([
+        fetchRSS(),
+        fetchSearchResults({ provider }),
+      ]);
+
+      if (rssItems.status === 'fulfilled') {
+        items.push(...rssItems.value);
+        logger.info(`RSS: ${rssItems.value.length} items`);
+      } else {
+        logger.error('RSS collection failed', { error: rssItems.reason.message });
+      }
+      if (searchItems.status === 'fulfilled') {
+        items.push(...searchItems.value);
+        logger.info(`Web search: ${searchItems.value.length} items`);
+      } else {
+        logger.error('Web search failed', { error: searchItems.reason.message });
+      }
     }
 
     // Step 2: Early exit if nothing collected

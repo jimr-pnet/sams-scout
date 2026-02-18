@@ -213,7 +213,7 @@ router.delete('/queries/:id', auth, async (req, res, next) => {
 
 // GET /generate/stream — SSE endpoint for pipeline with real-time status updates
 router.get('/generate/stream', auth, (req, res) => {
-  const { provider } = req.query;
+  const { provider, lite } = req.query;
 
   // Validate provider if given
   const validProviders = getProviders().map(p => p.id);
@@ -257,7 +257,7 @@ router.get('/generate/stream', auth, (req, res) => {
   }
 
   // Run pipeline with status callback
-  runPipeline({ provider, onStatus })
+  runPipeline({ provider, onStatus, lite: lite === 'true' || lite === '1' })
     .then((episode) => {
       if (!clientDisconnected) {
         res.write(`data: ${JSON.stringify({ type: 'complete', episode })}\n\n`);
@@ -278,7 +278,7 @@ router.get('/generate/stream', auth, (req, res) => {
 // POST /generate — manual pipeline trigger with optional provider selection
 router.post('/generate', auth, async (req, res, next) => {
   try {
-    const { provider } = req.body || {};
+    const { provider, lite } = req.body || {};
 
     // Validate provider if given
     const validProviders = getProviders().map(p => p.id);
@@ -289,14 +289,17 @@ router.post('/generate', auth, async (req, res, next) => {
     }
 
     // Fire and forget — pipeline runs in background
-    runPipeline({ provider }).catch(err => {
+    runPipeline({ provider, lite: !!lite }).catch(err => {
       logger.error('Manual pipeline run failed', { error: err.message });
     });
 
     res.status(202).json({
       status: 'started',
       provider: provider || getDefaultProvider(),
-      message: 'Pipeline triggered. Results will appear in the database and Slack.',
+      lite: !!lite,
+      message: lite
+        ? 'Lite pipeline triggered (1 web search, no RSS). Results will appear in the database and Slack.'
+        : 'Pipeline triggered. Results will appear in the database and Slack.',
     });
   } catch (err) {
     next(err);

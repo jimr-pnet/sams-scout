@@ -10,10 +10,11 @@ const logger = require('../../../lib/logger');
  * @param {object} [options]
  * @param {string} [options.provider] - AI provider ('claude' or 'openai')
  * @param {number} [options.maxResultsPerQuery=5] - Max items to extract per query
+ * @param {number} [options.limit] - Max number of queries to run (for lite/test mode)
  * @returns {Promise<Array>} Normalized raw items ready for insertion
  */
 async function fetchSearchResults(options = {}) {
-  const { provider, maxResultsPerQuery = 5 } = options;
+  const { provider, maxResultsPerQuery = 5, limit } = options;
 
   // Get active search queries
   const { data: queries, error } = await supabase
@@ -31,11 +32,16 @@ async function fetchSearchResults(options = {}) {
     return [];
   }
 
-  logger.info(`Running ${queries.length} web searches`, { provider: provider || 'default' });
+  // In lite mode, pick a random subset of queries
+  const activeQueries = limit && limit < queries.length
+    ? queries.sort(() => Math.random() - 0.5).slice(0, limit)
+    : queries;
+
+  logger.info(`Running ${activeQueries.length} web searches${limit ? ` (limited from ${queries.length})` : ''}`, { provider: provider || 'default' });
 
   // Run searches sequentially to manage API usage
   const items = [];
-  for (const query of queries) {
+  for (const query of activeQueries) {
     try {
       const results = await searchSingleQuery(query, maxResultsPerQuery, provider);
       items.push(...results);
@@ -46,7 +52,7 @@ async function fetchSearchResults(options = {}) {
     }
   }
 
-  logger.info(`Web search complete: ${items.length} items from ${queries.length} queries`);
+  logger.info(`Web search complete: ${items.length} items from ${activeQueries.length} queries`);
   return items;
 }
 
