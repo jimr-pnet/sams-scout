@@ -37,7 +37,7 @@ async function writeScript(items, options = {}) {
   logger.info(`Generating script from ${items.length} items for ${date}`, { provider: provider || 'default' });
 
   // Prepare source material — strip HTML and cap content per item
-  const MAX_CONTENT_CHARS = 1500;
+  const MAX_CONTENT_CHARS = 800;
   const MAX_TOTAL_CHARS = 400000; // ~100k tokens budget for source material
 
   let sourceMaterial = items.map(item => ({
@@ -200,6 +200,7 @@ async function generateSummary(script, provider) {
   try {
     const { text } = await generateText({
       provider,
+      model: 'claude-haiku-4-5-20251001',
       maxTokens: 200,
       userMessage: `Summarise this briefing script in one to two sentences for a podcast episode description. Be specific about the topics covered. No quotes or formatting.\n\n${script.substring(0, 3000)}`,
     });
