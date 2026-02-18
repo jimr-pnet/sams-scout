@@ -59,8 +59,9 @@ async function scoreItems(items, options = {}) {
     scores = JSON.parse(jsonMatch[0]);
   } catch (err) {
     logger.error('Failed to parse scoring response', { error: err.message });
-    // Fallback: return all items unsorted
-    return items.map(item => ({ ...item, relevance_score: 5 }));
+    // Fallback: return first maxItems items unsorted with neutral score
+    logger.warn(`Scoring fallback: returning first ${maxItems} of ${items.length} items`);
+    return items.slice(0, maxItems).map(item => ({ ...item, relevance_score: 5 }));
   }
 
   // Build a score lookup

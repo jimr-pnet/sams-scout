@@ -36,20 +36,39 @@ async function writeScript(items, options = {}) {
 
   logger.info(`Generating script from ${items.length} items for ${date}`, { provider: provider || 'default' });
 
-  // Prepare source material
-  const sourceMaterial = items.map(item => ({
+  // Prepare source material — strip HTML and cap content per item
+  const MAX_CONTENT_CHARS = 1500;
+  const MAX_TOTAL_CHARS = 400000; // ~100k tokens budget for source material
+
+  let sourceMaterial = items.map(item => ({
     id: item.id,
-    title: item.title,
-    content: (item.content || '').substring(0, 2000),
+    title: (item.title || '').substring(0, 200),
+    content: (item.content || '').replace(/<[^>]*>/g, '').substring(0, MAX_CONTENT_CHARS),
     source_type: item.source_type,
-    url: item.url,
+    url: (item.url || '').substring(0, 500),
     relevance_score: item.relevance_score,
   }));
+
+  // Safety net: if total source material is too large, trim further
+  let sourceJson = JSON.stringify(sourceMaterial, null, 2);
+  if (sourceJson.length > MAX_TOTAL_CHARS) {
+    logger.warn(`Source material too large (${sourceJson.length} chars). Trimming to fit budget.`);
+    // Reduce per-item content until it fits, keeping higher-scored items
+    sourceMaterial.sort((a, b) => (b.relevance_score || 0) - (a.relevance_score || 0));
+    const maxPerItem = Math.floor(MAX_TOTAL_CHARS / sourceMaterial.length) - 200;
+    sourceMaterial = sourceMaterial.map(item => ({
+      ...item,
+      content: item.content.substring(0, Math.max(300, maxPerItem)),
+    }));
+    sourceJson = JSON.stringify(sourceMaterial, null, 2);
+  }
+
+  logger.info(`Script prompt source material: ${sourceMaterial.length} items, ${sourceJson.length} chars`);
 
   const { text: script } = await generateText({
     provider,
     system: contextPrompt,
-    userMessage: `${scriptPrompt}\n\nToday's date: ${date}\n\n## Source Material\n\n${JSON.stringify(sourceMaterial, null, 2)}`,
+    userMessage: `${scriptPrompt}\n\nToday's date: ${date}\n\n## Source Material\n\n${sourceJson}`,
     maxTokens: 8192,
   });
 
