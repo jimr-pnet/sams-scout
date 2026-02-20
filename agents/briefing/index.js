@@ -213,7 +213,7 @@ router.delete('/queries/:id', auth, async (req, res, next) => {
 
 // GET /generate/stream — SSE endpoint for pipeline with real-time status updates
 router.get('/generate/stream', auth, (req, res) => {
-  const { provider, lite } = req.query;
+  const { provider } = req.query;
 
   // Validate provider if given
   const validProviders = getProviders().map(p => p.id);
@@ -256,8 +256,7 @@ router.get('/generate/stream', auth, (req, res) => {
     }
   }
 
-  // Run pipeline with status callback (lite mode only for now)
-  runPipeline({ provider, onStatus, lite: true })
+  runPipeline({ provider, onStatus })
     .then((episode) => {
       if (!clientDisconnected) {
         res.write(`data: ${JSON.stringify({ type: 'complete', episode })}\n\n`);
@@ -278,7 +277,7 @@ router.get('/generate/stream', auth, (req, res) => {
 // POST /generate — manual pipeline trigger with optional provider selection
 router.post('/generate', auth, async (req, res, next) => {
   try {
-    const { provider, lite } = req.body || {};
+    const { provider } = req.body || {};
 
     // Validate provider if given
     const validProviders = getProviders().map(p => p.id);
@@ -288,16 +287,14 @@ router.post('/generate', auth, async (req, res, next) => {
       });
     }
 
-    // Fire and forget — lite mode only for now
-    runPipeline({ provider, lite: true }).catch(err => {
+    runPipeline({ provider }).catch(err => {
       logger.error('Manual pipeline run failed', { error: err.message });
     });
 
     res.status(202).json({
       status: 'started',
       provider: provider || getDefaultProvider(),
-      lite: true,
-      message: 'Lite pipeline triggered (1 web search, no RSS). Results will appear in the database and Slack.',
+      message: 'Pipeline triggered. Results will appear in the database and Slack.',
     });
   } catch (err) {
     next(err);
@@ -309,8 +306,8 @@ const cronExpression = process.env.BRIEFING_CRON || '0 5 * * 1-5';
 
 if (cron.validate(cronExpression)) {
   cron.schedule(cronExpression, () => {
-    logger.info('Cron triggered: starting briefing pipeline (lite)');
-    runPipeline({ lite: true }).catch(err => {
+    logger.info('Cron triggered: starting briefing pipeline');
+    runPipeline().catch(err => {
       logger.error('Cron pipeline run failed', { error: err.message });
     });
   }, { timezone: 'Europe/London' });

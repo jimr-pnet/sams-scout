@@ -2,32 +2,26 @@ const supabase = require('../../lib/supabase');
 const logger = require('../../lib/logger');
 const { notify } = require('../../lib/slack');
 const { getDefaultProvider } = require('../../lib/ai');
-const { fetchRSS } = require('./sources/rss');
 const { fetchSearchResults } = require('./sources/search');
-const { fetchWebScrapeItems } = require('./sources/scraper');
-const { fetchPodcastTranscripts } = require('./sources/podcasts');
-const { fetchYouTubeTranscripts } = require('./sources/youtube');
 const { scoreItems } = require('./scorer');
 const { writeScript } = require('./scriptWriter');
 const { generateAudio } = require('./tts');
 
 /**
  * Main briefing pipeline orchestrator.
- * Coordinates: source collection → scoring → script writing → TTS → publishing.
+ * Coordinates: source collection (Tavily web search) → scoring → script writing → TTS → publishing.
  *
  * @param {object} [options]
  * @param {string} [options.provider] - AI provider ('claude' or 'openai'). Defaults to AI_PROVIDER env.
- * @param {boolean} [options.lite] - Lite mode: skip RSS/scrapers/podcasts/YouTube, run all standing web searches only.
  * @returns {Promise<object>} The created episode record
  */
 async function runPipeline(options = {}) {
   const provider = options.provider || getDefaultProvider();
   const onStatus = options.onStatus || (() => {});
-  const lite = options.lite || false;
   const date = new Date().toISOString().split('T')[0];
   let episodeId = null;
 
-  logger.info('=== Briefing pipeline started ===', { date, provider, lite });
+  logger.info('=== Briefing pipeline started ===', { date, provider });
 
   try {
     // Diagnostic: log source and query counts so we can see what's in the DB
@@ -44,60 +38,18 @@ async function runPipeline(options = {}) {
       activeQueries: qErr ? `error: ${qErr.message}` : queryCount,
     });
 
-    // Step 1: Collect sources
-    logger.info('Step 1: Collecting sources', { lite });
-    onStatus({ step: 1, totalSteps: 11, status: 'running', message: lite ? 'Lite mode: running all standing web searches...' : 'Collecting sources from RSS, web search, scrapers, podcasts, and YouTube...', detail: null });
+    // Step 1: Collect sources via Tavily web search
+    logger.info('Step 1: Collecting sources');
+    onStatus({ step: 1, totalSteps: 11, status: 'running', message: 'Running standing web searches...', detail: null });
 
     const items = [];
 
-    if (lite) {
-      // Lite mode: skip RSS/scrapers/podcasts/YouTube, run ALL standing search queries
-      try {
-        const results = await fetchSearchResults({ provider });
-        items.push(...results);
-        logger.info(`Lite web search: ${results.length} items`);
-      } catch (err) {
-        logger.error('Lite web search failed', { error: err.message });
-      }
-    } else {
-      const [rssItems, searchItems, scrapeItems, podcastItems, youtubeItems] = await Promise.allSettled([
-        fetchRSS(),
-        fetchSearchResults({ provider }),
-        fetchWebScrapeItems(),
-        fetchPodcastTranscripts(),
-        fetchYouTubeTranscripts(),
-      ]);
-
-      if (rssItems.status === 'fulfilled') {
-        items.push(...rssItems.value);
-        logger.info(`RSS: ${rssItems.value.length} items`);
-      } else {
-        logger.error('RSS collection failed', { error: rssItems.reason.message });
-      }
-      if (searchItems.status === 'fulfilled') {
-        items.push(...searchItems.value);
-        logger.info(`Web search: ${searchItems.value.length} items`);
-      } else {
-        logger.error('Web search failed', { error: searchItems.reason.message });
-      }
-      if (scrapeItems.status === 'fulfilled') {
-        items.push(...scrapeItems.value);
-        logger.info(`Web scrape: ${scrapeItems.value.length} items`);
-      } else {
-        logger.error('Web scrape collection failed', { error: scrapeItems.reason.message });
-      }
-      if (podcastItems.status === 'fulfilled') {
-        items.push(...podcastItems.value);
-        logger.info(`Podcasts: ${podcastItems.value.length} items`);
-      } else {
-        logger.error('Podcast collection failed', { error: podcastItems.reason.message });
-      }
-      if (youtubeItems.status === 'fulfilled') {
-        items.push(...youtubeItems.value);
-        logger.info(`YouTube: ${youtubeItems.value.length} items`);
-      } else {
-        logger.error('YouTube collection failed', { error: youtubeItems.reason.message });
-      }
+    try {
+      const results = await fetchSearchResults({ provider });
+      items.push(...results);
+      logger.info(`Web search: ${results.length} items`);
+    } catch (err) {
+      logger.error('Web search failed', { error: err.message });
     }
 
     // Step 2: Early exit if nothing collected
@@ -109,7 +61,7 @@ async function runPipeline(options = {}) {
     }
 
     logger.info(`Total items collected: ${items.length}`);
-    onStatus({ step: 1, totalSteps: 11, status: 'completed', message: `Collected ${items.length} items${lite ? ' (lite mode)' : ''}.`, detail: { itemCount: items.length, lite } });
+    onStatus({ step: 1, totalSteps: 11, status: 'completed', message: `Collected ${items.length} items.`, detail: { itemCount: items.length } });
 
     // Step 3: Assign temp IDs for scoring reference
     items.forEach((item, i) => {

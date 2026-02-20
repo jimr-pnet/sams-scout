@@ -7,6 +7,7 @@ const agentRegistry = require('./agents');
 const errorHandler = require('./middleware/errorHandler');
 const { runMigrations } = require('./lib/migrate');
 const { ensureSeedData } = require('./lib/seed');
+const { chatWithEpisodes } = require('./lib/episodeChat');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -50,6 +51,26 @@ app.get('/health', (req, res) => {
     timestamp: new Date().toISOString(),
     uptime: process.uptime(),
   });
+});
+
+// POST /api/chat — episode-aware conversational chat
+app.post('/api/chat', async (req, res, next) => {
+  try {
+    const { message, history } = req.body;
+
+    if (!message || typeof message !== 'string' || message.trim().length === 0) {
+      return res.status(400).json({ error: 'message is required' });
+    }
+
+    if (history && !Array.isArray(history)) {
+      return res.status(400).json({ error: 'history must be an array of { role, content }' });
+    }
+
+    const reply = await chatWithEpisodes(message, { history });
+    res.json({ reply });
+  } catch (err) {
+    next(err);
+  }
 });
 
 // Mount all agents
