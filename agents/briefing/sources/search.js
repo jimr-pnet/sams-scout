@@ -14,19 +14,18 @@ function getClient() {
  *
  * @param {object} [options]
  * @param {number} [options.maxResultsPerQuery=5] - Max items per query
- * @param {number} [options.limit] - Max number of queries to run (for lite/test mode)
- * @param {number} [options.maxQueries=6] - Hard cap on queries even in full mode (controls cost)
+ * @param {number} [options.maxResultsPerQuery=5] - Max items per query
  * @returns {Promise<Array>} Normalized raw items ready for insertion
  */
 async function fetchSearchResults(options = {}) {
-  const { maxResultsPerQuery = 5, limit, maxQueries = 6 } = options;
+  const { maxResultsPerQuery = 5 } = options;
 
   if (!process.env.TAVILY_API_KEY) {
     logger.warn('Skipping web search: TAVILY_API_KEY not configured');
     return [];
   }
 
-  // Get active search queries
+  // Get ALL active search queries from the database
   const { data: queries, error } = await supabase
     .from('briefing_search_queries')
     .select('*')
@@ -42,11 +41,7 @@ async function fetchSearchResults(options = {}) {
     return [];
   }
 
-  // Apply limit (lite mode) or hard cap (full mode) to control API costs
-  const cap = limit || maxQueries;
-  const activeQueries = cap < queries.length
-    ? queries.sort(() => Math.random() - 0.5).slice(0, cap)
-    : queries;
+  const activeQueries = queries;
 
   logger.info(`Running ${activeQueries.length} Tavily searches${limit ? ` (limited from ${queries.length})` : ''}`);
 

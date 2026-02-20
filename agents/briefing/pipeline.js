@@ -17,7 +17,7 @@ const { generateAudio } = require('./tts');
  *
  * @param {object} [options]
  * @param {string} [options.provider] - AI provider ('claude' or 'openai'). Defaults to AI_PROVIDER env.
- * @param {boolean} [options.lite] - Lite mode: skip RSS, run 1 web search query only. For testing.
+ * @param {boolean} [options.lite] - Lite mode: skip RSS/scrapers/podcasts/YouTube, run all standing web searches only.
  * @returns {Promise<object>} The created episode record
  */
 async function runPipeline(options = {}) {
@@ -46,14 +46,14 @@ async function runPipeline(options = {}) {
 
     // Step 1: Collect sources
     logger.info('Step 1: Collecting sources', { lite });
-    onStatus({ step: 1, totalSteps: 11, status: 'running', message: lite ? 'Lite mode: running 5 web searches...' : 'Collecting sources from RSS, web search, scrapers, podcasts, and YouTube...', detail: null });
+    onStatus({ step: 1, totalSteps: 11, status: 'running', message: lite ? 'Lite mode: running all standing web searches...' : 'Collecting sources from RSS, web search, scrapers, podcasts, and YouTube...', detail: null });
 
     const items = [];
 
     if (lite) {
-      // Lite mode: skip RSS, run all 5 standing search queries
+      // Lite mode: skip RSS/scrapers/podcasts/YouTube, run ALL standing search queries
       try {
-        const results = await fetchSearchResults({ provider, limit: 5 });
+        const results = await fetchSearchResults({ provider });
         items.push(...results);
         logger.info(`Lite web search: ${results.length} items`);
       } catch (err) {
