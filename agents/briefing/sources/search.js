@@ -14,7 +14,6 @@ function getClient() {
  *
  * @param {object} [options]
  * @param {number} [options.maxResultsPerQuery=5] - Max items per query
- * @param {number} [options.maxResultsPerQuery=5] - Max items per query
  * @returns {Promise<Array>} Normalized raw items ready for insertion
  */
 async function fetchSearchResults(options = {}) {
@@ -41,13 +40,11 @@ async function fetchSearchResults(options = {}) {
     return [];
   }
 
-  const activeQueries = queries;
-
-  logger.info(`Running ${activeQueries.length} Tavily searches${limit ? ` (limited from ${queries.length})` : ''}`);
+  logger.info(`Running ${queries.length} Tavily searches`);
 
   // Run searches sequentially to stay within rate limits
   const items = [];
-  for (const query of activeQueries) {
+  for (const query of queries) {
     try {
       const results = await searchSingleQuery(query, maxResultsPerQuery);
       items.push(...results);
@@ -58,7 +55,7 @@ async function fetchSearchResults(options = {}) {
     }
   }
 
-  logger.info(`Web search complete: ${items.length} items from ${activeQueries.length} queries`);
+  logger.info(`Web search complete: ${items.length} items from ${queries.length} queries`);
   return items;
 }
 
