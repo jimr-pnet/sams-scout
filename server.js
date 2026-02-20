@@ -14,6 +14,7 @@ const PORT = process.env.PORT || 3000;
 // CORS — allow Lovable frontend and local dev
 const allowedOrigins = [
   'https://sam-scout.lovable.app',
+  'https://id-preview--ca526d73-7f43-4667-95e8-f80e53a855f2.lovable.app',
   'http://localhost:5173',
   'http://localhost:3000',
 ];
