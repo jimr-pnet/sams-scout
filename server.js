@@ -7,7 +7,7 @@ const agentRegistry = require('./agents');
 const errorHandler = require('./middleware/errorHandler');
 const { runMigrations } = require('./lib/migrate');
 const { ensureSeedData } = require('./lib/seed');
-const { chatWithEpisodes } = require('./lib/episodeChat');
+const { chatWithEpisodes, listSessions, getSession } = require('./lib/episodeChat');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -53,21 +53,37 @@ app.get('/health', (req, res) => {
   });
 });
 
-// POST /api/chat — episode-aware conversational chat
+// POST /api/chat — episode-aware conversational chat with session persistence
 app.post('/api/chat', async (req, res, next) => {
   try {
-    const { message, history } = req.body;
+    const { message, session_id } = req.body;
 
     if (!message || typeof message !== 'string' || message.trim().length === 0) {
       return res.status(400).json({ error: 'message is required' });
     }
 
-    if (history && !Array.isArray(history)) {
-      return res.status(400).json({ error: 'history must be an array of { role, content }' });
-    }
+    const result = await chatWithEpisodes(message, { sessionId: session_id });
+    res.json({ reply: result.reply, session_id: result.sessionId });
+  } catch (err) {
+    next(err);
+  }
+});
 
-    const reply = await chatWithEpisodes(message, { history });
-    res.json({ reply });
+// GET /api/chat/sessions — list chat sessions with previews
+app.get('/api/chat/sessions', async (req, res, next) => {
+  try {
+    const sessions = await listSessions();
+    res.json({ sessions });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// GET /api/chat/:sessionId — load full message history for a session
+app.get('/api/chat/:sessionId', async (req, res, next) => {
+  try {
+    const result = await getSession(req.params.sessionId);
+    res.json(result);
   } catch (err) {
     next(err);
   }
