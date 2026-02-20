@@ -2,7 +2,7 @@ const logger = require('../lib/logger');
 
 function errorHandler(err, req, res, _next) {
   const statusCode = err.statusCode || 500;
-  const message = err.expose ? err.message : 'Internal server error';
+  const message = err.message || 'Internal server error';
 
   logger.error(`[${statusCode}] ${err.message}`, {
     path: req.path,
