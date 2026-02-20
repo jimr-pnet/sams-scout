@@ -1,6 +1,7 @@
 const fs = require('fs');
 const path = require('path');
 const { generateText } = require('../../lib/ai');
+const supabase = require('../../lib/supabase');
 const logger = require('../../lib/logger');
 
 const scriptPrompt = fs.readFileSync(
@@ -65,10 +66,33 @@ async function writeScript(items, options = {}) {
 
   logger.info(`Script prompt source material: ${sourceMaterial.length} items, ${sourceJson.length} chars`);
 
+  // Fetch previous episode for continuity — avoid repeating stories
+  let previousContext = '';
+  try {
+    const { data: prevEpisode } = await supabase
+      .from('briefing_episodes')
+      .select('date, summary, sections')
+      .in('status', ['generated', 'delivered'])
+      .order('date', { ascending: false })
+      .limit(1)
+      .single();
+
+    if (prevEpisode) {
+      const prevTitles = (prevEpisode.sections || [])
+        .filter(s => s.title)
+        .map(s => `- ${s.title}`)
+        .join('\n');
+      previousContext = `\n\n## Previous Briefing (${prevEpisode.date})\n\nSummary: ${prevEpisode.summary}\n\nTopics covered:\n${prevTitles}\n\nDo NOT repeat these stories. Build on them, advance the thinking, or cover new ground.`;
+      logger.info('Including previous episode context for continuity', { prevDate: prevEpisode.date });
+    }
+  } catch (err) {
+    logger.debug('No previous episode found (first run or query failed)', { error: err.message });
+  }
+
   const { text: script } = await generateText({
     provider,
     system: contextPrompt,
-    userMessage: `${scriptPrompt}\n\nToday's date: ${date}\n\n## Source Material\n\n${sourceJson}`,
+    userMessage: `${scriptPrompt}\n\nToday's date: ${date}\n\n## Source Material\n\n${sourceJson}${previousContext}`,
     maxTokens: 8192,
   });
 

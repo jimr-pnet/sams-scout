@@ -23,15 +23,16 @@ app.use(cors({
   origin(origin, callback) {
     // Allow requests with no origin (curl, server-to-server, mobile)
     if (!origin) return callback(null, true);
-    // Allow exact matches and any *.lovable.app subdomain
+    // Allow exact matches and any *.lovable.app / *.lovable.dev subdomain
     if (
       allowedOrigins.includes(origin) ||
-      /lovable\.app$/.test(origin) ||
-      /lovable\.dev$/.test(origin)
+      /\.lovable\.app$/.test(origin) ||
+      /\.lovable\.dev$/.test(origin)
     ) {
       return callback(null, true);
     }
-    callback(new Error('Not allowed by CORS'));
+    logger.warn('CORS rejected origin', { origin });
+    callback(null, false);
   },
   credentials: true,
 }));
