@@ -28,6 +28,10 @@ Completely unrelated to AI, marketing, commerce, or search.
 
 If multiple items cover the same story, score the best/most detailed version highest and score duplicates at 0.
 
+## Recently Covered Topics
+
+If a "Recently Covered Topics" section is provided below, items that cover the SAME story or topic as a recent episode MUST score 0 — even if the item is high quality. The only exception is if the item contains a genuinely new and significant development (e.g. new data, a reversal, a major update). Minor follow-ups, opinion pieces, or additional coverage of the same story should score 0.
+
 ## Input Format
 
 You will receive a JSON array of items, each with: id, title, content_snippet, source_type, url.

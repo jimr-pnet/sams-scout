@@ -61,7 +61,43 @@ async function runPipeline(options = {}) {
     }
 
     logger.info(`Total items collected: ${items.length}`);
-    onStatus({ step: 1, totalSteps: 11, status: 'completed', message: `Collected ${items.length} items.`, detail: { itemCount: items.length } });
+
+    // Step 2b: Deduplicate against recently ingested items (last 7 days)
+    const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString();
+    const { data: recentItems } = await supabase
+      .from('briefing_raw_items')
+      .select('url, title')
+      .gte('fetched_at', sevenDaysAgo);
+
+    if (recentItems && recentItems.length > 0) {
+      const recentUrls = new Set(recentItems.map(r => r.url).filter(Boolean));
+      const recentTitles = new Set(recentItems.map(r => (r.title || '').toLowerCase().trim()).filter(Boolean));
+      const beforeCount = items.length;
+
+      // Remove items whose URL or exact title already appeared in the last 7 days
+      const deduped = items.filter(item => {
+        if (item.url && recentUrls.has(item.url)) return false;
+        if (item.title && recentTitles.has(item.title.toLowerCase().trim())) return false;
+        return true;
+      });
+
+      const removed = beforeCount - deduped.length;
+      if (removed > 0) {
+        logger.info(`Deduplication: removed ${removed} items already seen in the last 7 days`);
+        items.length = 0;
+        items.push(...deduped);
+      }
+    }
+
+    // Re-check after dedup
+    if (items.length === 0) {
+      logger.warn('All items were duplicates of recent content — aborting pipeline');
+      onStatus({ step: 2, totalSteps: 11, status: 'skipped', message: 'All items were duplicates of recent content. Skipping.', detail: null });
+      await notify({ text: `⚠️ Briefing pipeline for ${date}: All items duplicated recent content. Skipping.` });
+      return null;
+    }
+
+    onStatus({ step: 1, totalSteps: 11, status: 'completed', message: `Collected ${items.length} items (after deduplication).`, detail: { itemCount: items.length } });
 
     // Step 3: Assign temp IDs for scoring reference
     items.forEach((item, i) => {
