@@ -1,6 +1,7 @@
 const fs = require('fs');
 const path = require('path');
 const { generateText } = require('../../lib/ai');
+const supabase = require('../../lib/supabase');
 const logger = require('../../lib/logger');
 
 const scoringPrompt = fs.readFileSync(
@@ -44,11 +45,36 @@ async function scoreItems(items, options = {}) {
     url: item.url,
   }));
 
+  // Fetch recent episode topics so the scorer can penalise already-covered stories
+  let recentTopicsBlock = '';
+  try {
+    const { data: recentEpisodes } = await supabase
+      .from('briefing_episodes')
+      .select('date, summary, sections')
+      .in('status', ['generated', 'delivered'])
+      .order('date', { ascending: false })
+      .limit(5);
+
+    if (recentEpisodes && recentEpisodes.length > 0) {
+      const topicLines = recentEpisodes.map(ep => {
+        const titles = (ep.sections || [])
+          .filter(s => s.title)
+          .map(s => s.title)
+          .join('; ');
+        return `- ${ep.date}: ${titles || ep.summary || 'No topics recorded'}`;
+      }).join('\n');
+      recentTopicsBlock = `\n\n## Recently Covered Topics (last ${recentEpisodes.length} episodes)\n\n${topicLines}\n\nItems that cover the SAME story as a recent episode should score 0 unless there is a genuinely new development or significant update. Minor follow-ups on the same story score at most 4.`;
+      logger.info(`Scorer: including ${recentEpisodes.length} recent episodes for deduplication`);
+    }
+  } catch (err) {
+    logger.debug('Could not fetch recent episodes for scorer context', { error: err.message });
+  }
+
   const { text } = await generateText({
     provider,
     model: 'claude-haiku-4-5-20251001',
     system: contextPrompt,
-    userMessage: `${scoringPrompt}\n\n## Items to Score\n\n${JSON.stringify(itemsForScoring, null, 2)}`,
+    userMessage: `${scoringPrompt}${recentTopicsBlock}\n\n## Items to Score\n\n${JSON.stringify(itemsForScoring, null, 2)}`,
     maxTokens: 4096,
   });
 

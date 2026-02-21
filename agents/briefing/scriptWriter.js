@@ -66,27 +66,32 @@ async function writeScript(items, options = {}) {
 
   logger.info(`Script prompt source material: ${sourceMaterial.length} items, ${sourceJson.length} chars`);
 
-  // Fetch previous episode for continuity — avoid repeating stories
+  // Fetch recent episodes for continuity — avoid repeating stories
   let previousContext = '';
   try {
-    const { data: prevEpisode } = await supabase
+    const { data: recentEpisodes } = await supabase
       .from('briefing_episodes')
       .select('date, summary, sections')
       .in('status', ['generated', 'delivered'])
       .order('date', { ascending: false })
-      .limit(1)
-      .single();
+      .limit(5);
 
-    if (prevEpisode) {
-      const prevTitles = (prevEpisode.sections || [])
-        .filter(s => s.title)
-        .map(s => `- ${s.title}`)
-        .join('\n');
-      previousContext = `\n\n## Previous Briefing (${prevEpisode.date})\n\nSummary: ${prevEpisode.summary}\n\nTopics covered:\n${prevTitles}\n\nDo NOT repeat these stories. Build on them, advance the thinking, or cover new ground.`;
-      logger.info('Including previous episode context for continuity', { prevDate: prevEpisode.date });
+    if (recentEpisodes && recentEpisodes.length > 0) {
+      const episodeBlocks = recentEpisodes.map(ep => {
+        const titles = (ep.sections || [])
+          .filter(s => s.title)
+          .map(s => `  - ${s.title}`)
+          .join('\n');
+        return `**${ep.date}**: ${ep.summary || 'No summary'}\nTopics:\n${titles || '  (none recorded)'}`;
+      }).join('\n\n');
+
+      previousContext = `\n\n## Recent Briefings (last ${recentEpisodes.length} episodes)\n\n${episodeBlocks}\n\nCRITICAL: Do NOT write about the same topics as these recent briefings. If a story from the source material was already covered in any of the episodes above, SKIP IT entirely unless the source material contains a genuinely new and significant development. In that case, briefly reference the previous coverage ("We covered X earlier this week — here's what's changed...") and focus only on what's new. If most of the source material overlaps with recent episodes, write a shorter briefing with only the genuinely new items rather than rehashing old topics.`;
+      logger.info(`Including ${recentEpisodes.length} recent episodes for continuity`, {
+        dates: recentEpisodes.map(e => e.date),
+      });
     }
   } catch (err) {
-    logger.debug('No previous episode found (first run or query failed)', { error: err.message });
+    logger.debug('No previous episodes found (first run or query failed)', { error: err.message });
   }
 
   const { text: script } = await generateText({
